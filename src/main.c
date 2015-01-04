@@ -6,14 +6,16 @@
 static Window *s_main_window;
 static TextLayer *s_time_layer;
 static TextLayer *s_weather_layer;
+static TextLayer *s_battery_layer;
  
-static GSize s_time_layer_size;
+// // Debugging var
+// static GSize s_time_layer_size;
 static GFont s_time_font;
-static GFont s_weather_font;
+static GFont s_status_font;
  
 static BitmapLayer *s_background_layer;
 static GBitmap *s_background_bitmap;
- 
+
 static void update_time() {
   // Get a tm structure
   time_t temp = time(NULL); 
@@ -33,6 +35,14 @@ static void update_time() {
  
   // Display this time on the TextLayer
   text_layer_set_text(s_time_layer, buffer);
+}
+
+static void battery_handler(BatteryChargeState new_state) {
+  // Write to buffer and display
+  static char s_battery_buffer[32];
+  snprintf(s_battery_buffer, sizeof(s_battery_buffer), "%d%%", new_state.charge_percent);
+  APP_LOG(APP_LOG_LEVEL_INFO, "%s", s_battery_buffer);
+  text_layer_set_text(s_battery_layer, s_battery_buffer);
 }
  
 static void main_window_load(Window *window) {
@@ -82,16 +92,32 @@ static void main_window_load(Window *window) {
 //   APP_LOG(APP_LOG_LEVEL_INFO , "Frame Origin x is %i", time_layer_frame.origin.y);
   
   // Create temperature Layer
-  s_weather_layer = text_layer_create(GRect(0, 130, 144, 25));
+  s_weather_layer = text_layer_create(GRect(0, 140, 144, 25));
   text_layer_set_background_color(s_weather_layer, GColorClear);
   text_layer_set_text_color(s_weather_layer, GColorWhite);
-  text_layer_set_text_alignment(s_weather_layer, GTextAlignmentCenter);
+  text_layer_set_text_alignment(s_weather_layer, GTextAlignmentLeft);
   text_layer_set_text(s_weather_layer, "Loading...");
   
   // Create second font, apply it and add to Window
-  s_weather_font = fonts_get_system_font(FONT_KEY_GOTHIC_18);
-  text_layer_set_font(s_weather_layer, s_weather_font);
+  s_status_font = fonts_get_system_font(FONT_KEY_GOTHIC_18);
+  
+  // Set font for weather layer
+  text_layer_set_font(s_weather_layer, s_status_font);
   layer_add_child(window_get_root_layer(window), text_layer_get_layer(s_weather_layer));
+  
+  // Create Battery Layer
+  s_battery_layer = text_layer_create(GRect(0, 140, 144, 25));
+  text_layer_set_background_color(s_battery_layer, GColorClear);
+  text_layer_set_text_color(s_battery_layer, GColorWhite);
+  text_layer_set_text_alignment(s_battery_layer, GTextAlignmentRight);
+  text_layer_set_text(s_battery_layer, "Battery");
+  
+  // Set font for battery layer
+  text_layer_set_font(s_battery_layer, s_status_font);
+  layer_add_child(window_get_root_layer(window), text_layer_get_layer(s_battery_layer));
+  
+  // Get the current battery level
+  battery_handler(battery_state_service_peek());
   
   // Make sure the time is displayed from the start
   update_time();
@@ -127,6 +153,8 @@ static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
     app_message_outbox_send();
   }
 }
+
+
  
 static void inbox_received_callback(DictionaryIterator *iterator, void *context) {
   // Store incoming information
@@ -188,6 +216,9 @@ static void init() {
   
   // Register with TickTimerService
   tick_timer_service_subscribe(MINUTE_UNIT, tick_handler);
+  
+  // Subscribe to the Battery State Service
+  battery_state_service_subscribe(battery_handler);
   
   // Register callbacks
   app_message_register_inbox_received(inbox_received_callback);
